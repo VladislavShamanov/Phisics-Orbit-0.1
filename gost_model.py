@@ -1,23 +1,15 @@
 # gost_model.py
+import ctypes
+import os
 
-def calculate_atmosphere_density(height, f107, ap):
-    """
-    Расчет плотности верхней атмосферы Земли по ГОСТ Р 25645.166
-    height: высота в км (от 120 до 1500)
-    f107: индекс солнечной активности
-    ap: геомагнитный индекс
-    """
-    # Проверка диапазона ГОСТа
-    if not (120 <= height <= 1500):
-        raise ValueError("Высота должна быть в диапазоне от 120 до 1500 км")
+dll_path = os.path.join(os.path.dirname(__file__), 'gost_model.dll')
+_lib = ctypes.CDLL(dll_path)
 
-    # Базовая плотность (заглушка для проверки структуры, сюда пойдут формулы ГОСТа)
-    # Плотность атмосферы падает экспоненциально с высотой
-    rho_0 = 1.2e-9  # условная плотность на 120 км
-    h_scale = 50.0  # высота однородной атмосферы
+# Указываем 5 параметров c_double на входе
+_lib.get_density.argtypes = [
+    ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double
+]
+_lib.get_density.restype = ctypes.c_double
 
-    # Влияние солнечной активности (упрощенно)
-    solar_factor = 1.0 + 0.005 * (f107 - 70)
-
-    rho = rho_0 * (2.71828 ** (-(height - 120) / h_scale)) * solar_factor
-    return rho
+def calculate_density(height, f107, f81, kp, day_of_year):
+    return _lib.get_density(height, f107, f81, kp, day_of_year)

@@ -1,10 +1,7 @@
 # main.py
-from gost_model import calculate_atmosphere_density
+from gost_model import calculate_density
 
 if __name__ == "__main__":
-    h = 300  # Высота орбиты ИСЗ, км
-    f107 = 150  # Средняя солнечная активность
-    ap = 4  # Спокойное геомагнитное поле
-
-    density = calculate_atmosphere_density(h, f107, ap)
-    print(f"Плотность атмосферы на высоте {h} км: {density:.4e} кг/м³")
+    # Высота 400 км, F107=150, F81=150, Kp=1.0, День=140
+    density = calculate_density(400.0, 150.0, 150.0, 1.0, 140.0)
+    print(f"Истинная плотность по ГОСТ: {density:.4e} кг/м³")
