@@ -211,6 +211,83 @@ class OrbitControlFrame(wx.Frame):
         self.canvas.draw()
         wx.Bell()
 
+        def export_table_to_csv(self, event):
+            """Экспортирует данные из таблицы в CSV файл, совместимый с Excel и OriginPro"""
+            num_rows = self.grid.GetNumberRows()
+            if num_rows == 0:
+                wx.MessageBox("Таблица пуста! Нечего экспортировать.", "Внимание", wx.OK | wx.ICON_WARNING)
+                return
+
+            # Открываем стандартный системный диалог сохранения файла
+            with wx.FileDialog(self, "Сохранить баллистические данные", wildcard="CSV файлы (*.csv)|*.csv",
+                               style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as fileDialog:
+
+                if fileDialog.ShowModal() == wx.ID_CANCEL:
+                    return  # Пользователь отменил сохранение
+
+                path = fileDialog.GetPath()
+                try:
+                    with open(path, 'w', encoding='utf-8-sig') as f:  # utf-8-sig чтобы Excel сразу читал кириллицу
+                        # Пишем заголовки колонок (через точку с запятой)
+                        headers = ["Время", "Высота (км)", "Широта", "Долгота", "Плотность (кг/м³)"]
+                        f.write(";".join(headers) + "\n")
+
+                        # Бежим по строкам таблицы и записываем данные
+                        for r in range(num_rows):
+                            row_data = [self.grid.GetCellValue(r, c) for c in range(5)]
+                            f.write(";".join(row_data) + "\n")
+
+                    wx.MessageBox(
+                        "Данные успешно экспортированы!\nВы можете открыть этот файл напрямую в Excel или импортировать в Origin Pro.",
+                        "Успех", wx.OK | wx.ICON_INFORMATION)
+                except Exception as e:
+                    wx.MessageBox(f"Не удалось сохранить файл: {e}", "Ошибка", wx.OK | wx.ICON_ERROR)
+
+        def add_satellite_by_norad(self, norad_id):
+            """Скачивает свежий TLE с Celestrak по NORAD ID и сохраняет в JSON базу"""
+            import requests
+            url = f"https://celestrak.org{norad_id}&FORMAT=TLE"
+
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code != 200 or "No data found" in response.text:
+                    wx.MessageBox(f"Спутник с NORAD ID {norad_id} не найден на Celestrak!", "Ошибка API",
+                                  wx.OK | wx.ICON_ERROR)
+                    return False
+
+                lines = response.text.strip().split('\n')
+                if len(lines) >= 3:
+                    name = lines.strip()  # Имя спутника из первой строки Celestrak
+                    tle_l1 = lines.strip()
+                    tle_l2 = lines.strip()
+
+                    # Читаем текущую базу JSON
+                    json_path = os.path.join(os.path.dirname(__file__), 'satellites.json')
+                    sat_data = {}
+                    if os.path.exists(json_path):
+                        with open(json_path, 'r', encoding='utf-8') as f:
+                            sat_data = json.load(f)
+
+                    # Добавляем или обновляем спутник
+                    sat_data[str(norad_id)] = {
+                        "name": name,
+                        "tle_l1": tle_l1,
+                        "tle_l2": tle_l2
+                    }
+
+                    # Записываем обратно в файл
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(sat_data, f, ensure_ascii=False, indent=2)
+
+                    # Перезагружаем список на экране
+                    self.sat_listbox.Clear()
+                    self.load_satellites_from_json()
+                    wx.MessageBox(f"Объект {name} успешно добавлен/обновлен!", "Успех API", wx.OK | wx.ICON_INFORMATION)
+                    return True
+            except Exception as e:
+                wx.MessageBox(f"Ошибка сети при обновлении TLE: {e}", "Ошибка", wx.OK | wx.ICON_ERROR)
+            return False
+
 
 if __name__ == "__main__":
     app = wx.App()
