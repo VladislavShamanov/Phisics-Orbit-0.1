@@ -1,4 +1,6 @@
 # main.py
+import math
+
 from datetime import datetime
 from orbit_propagator import get_points_along_orbit
 from gost_model import calculate_density
@@ -50,3 +52,21 @@ if __name__ == "__main__":
 
     print("=" * 65)
     print("Расчет по орбите успешно завершен!")
+
+    # Добавь этот блок в конец main.py для проверки перед сном:
+    from kepler_converter import kepler_to_cartesian
+
+    print("\n" + "=" * 50)
+    print("ТЕСТ: Конвертация Кеплеровых элементов")
+    print("=" * 50)
+
+    # Задаем параметры: а=6771км, е=0 (круговая), i=51.6 град, остальное по нулям
+    pos, vel = kepler_to_cartesian(6771.0, 0.0, 51.6, 0.0, 0.0, 0.0)
+
+    print(f"Положение ИСЗ (X, Y, Z): {pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f} км")
+    print(f"Скорость ИСЗ (Vx, Vy, Vz): {vel[0]:.2f}, {vel[1]:.2f}, {vel[2]:.2f} км/с")
+    # Первая космическая скорость должна быть около 7.67 км/с!
+    v_full = math.sqrt(vel[0] ** 2 + vel[1] ** 2 + vel[2] ** 2)
+    print(f"Полная скорость спутника: {v_full:.3f} км/с")
+    print("=" * 50)
+
