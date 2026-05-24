@@ -1,0 +1,37 @@
+Если ты хочешь, чтобы и консоль работала сама, тебе нужно один раз
+установить официальный помощник авторизации от Microsoft.
+Открой Git Bash [ссылка] или обычный терминал и введи:
+
+git config --global credential.helper manager
+
+
+git config --global user.name "VladislavShamanov"
+git config --global user.email "твой_email@example.com"
+
+
+Чтобы Python мог отправлять запросы к серверам космической погоды,
+нам понадобится стандартная библиотека requests
+
+pip install requests
+
+
+pip install sgp4
+
+pip install -r requirements.txt
+
+pip freeze > requirements.txt
+
+Команда со знаком > (freeze — заморозить) пишется там, где ты создаёшь изменения [ссылка].
+Команда с флагом -r (install — установить) пишется там, где ты хочешь эти изменения повторить [ссылка].
+
+
+import math
+
+pip install wxPython
+
+pip install matplotlib
+
+
+
+
+
