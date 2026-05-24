@@ -69,3 +69,55 @@ def kepler_to_cartesian(a, e, i_deg, omega_deg, w_deg, M_deg):
     Vz = R31 * vx_orb + R32 * vy_orb
 
     return [X, Y, Z], [Vx, Vy, Vz]
+
+
+# Добавить в конец файла kepler_converter.py
+
+def parse_omm_csv_string(csv_header, csv_data_line):
+    """
+    Парсит OMM CSV строку с сайта Celestrak.
+    Рассчитывает большую полуось 'a' через MEAN_MOTION и возвращает словарь элементов.
+    """
+    try:
+        headers = [h.strip().upper() for h in csv_header.split(',')]
+        values = [v.strip() for v in csv_data_line.split(',')]
+
+        if len(headers) != len(values):
+            return None
+
+        # Создаем словарь для удобного поиска по именам колонок
+        data = dict(zip(headers, values))
+
+        # Вытаскиваем элементы
+        norad_id = data.get("NORAD_CAT_ID")
+        name = data.get("OBJECT_NAME", f"Sat {norad_id}")
+        epoch = data.get("EPOCH", "Unknown")
+
+        e = float(data["ECCENTRICITY"])
+        i = float(data["INCLINATION"])
+        omega = float(data["RA_OF_ASC_NODE"])
+        w = float(data["ARG_OF_PERICENTER"])
+        M = float(data["MEAN_ANOMALY"])
+
+        # Закон Кеплера: вычисляем большую полуось 'a' из среднего движения (Mean Motion - оборотов в сутки)
+        mean_motion = float(data["MEAN_MOTION"])
+        # Переводим обороты/сутки в радианы/сек
+        n_rad_sec = (mean_motion * 2.0 * 3.141592653589793) / 86400.0
+        MU = 398600.4418  # км³/с²
+        a = (MU / (n_rad_sec ** 2)) ** (1.0 / 3.0)
+
+        return {
+            "norad_id": norad_id,
+            "name": name,
+            "epoch": epoch,
+            "a": round(a, 2),
+            "e": e,
+            "i": i,
+            "omega": omega,
+            "w": w,
+            "M": M
+        }
+    except Exception as ex:
+        print(f"Ошибка парсинга OMM CSV: {ex}")
+        return None
+
