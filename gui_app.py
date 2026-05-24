@@ -389,7 +389,18 @@ class OrbitControlFrame(wx.Frame):
         x_time, y_density = [], []
 
         for i, pt in enumerate(orbit_points):
+
+            # Наш старый расчет плотности
             density = 0.0 if pt['height'] > 1500.0 else calculate_density(pt['height'], 150.0, 150.0, 1.0, 140.0)
+
+            # ДОБАВЛЯЕМ: Расчет геомагнитного поля по IGRF-13!
+            from magnetic_model import calculate_magnetic_field
+            mag_field = calculate_magnetic_field(pt['height'], pt['lat'], pt['lon'], datetime.utcnow())
+
+            # Печатаем в консоль для дебага (проверим, что данные идут)
+            if i % 5 == 0:  # выводим каждую 5-ю точку, чтобы не спамить
+                print(f"Точка {i}: Высота={pt['height']:.1f}км, Магнитное поле B={mag_field['B']:.1f} нТл")
+
             x_time.append(i * step_sec)
             y_density.append(density)
 
