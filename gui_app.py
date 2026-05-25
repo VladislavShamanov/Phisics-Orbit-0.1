@@ -1,10 +1,11 @@
+# gui_app.py
 import wx
 import wx.adv
 import wx.grid
 import json
 import os
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib
 
@@ -19,7 +20,7 @@ from kepler_converter import kepler_to_cartesian, parse_omm_csv_string
 
 class OrbitControlFrame(wx.Frame):
     def __init__(self):
-        super().__init__(parent=None, title="🚀 Phisics-Orbit-0.1: Баллистический OMM/JSON комплекс", size=(1150, 750))
+        super().__init__(parent=None, title="🚀 Phisics-Orbit-0.1: Баллистический комплекс Сценариев", size=(1180, 780))
 
         panel = wx.Panel(self)
         main_sizer = wx.BoxSizer(wx.HORIZONTAL)
@@ -28,37 +29,28 @@ class OrbitControlFrame(wx.Frame):
         left_panel = wx.Panel(panel)
         left_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Статус
-        status_box = wx.StaticBox(left_panel, label="🛰 Мониторинг")
-        status_sizer = wx.StaticBoxSizer(status_box, wx.VERTICAL)
-        self.weather_label = wx.StaticText(left_panel, label="🟢 База данных автономна. Готова к расчету сценариев.")
-        self.weather_label.SetForegroundColour(wx.Colour(0, 128, 0))
-        status_sizer.Add(self.weather_label, 0, wx.ALL, 5)
-        left_sizer.Add(status_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        # Блок выбора объекта с Группировкой (TreeCtrl вместо ListBox)
+        left_sizer.Add(wx.StaticText(left_panel, label="📁 Библиотека ИСЗ и Групп:"), 0, wx.LEFT | wx.TOP, 5)
+        self.sat_tree = wx.TreeCtrl(left_panel, style=wx.TR_HAS_BUTTONS | wx.TR_SINGLE)
+        self.sat_tree.Bind(wx.EVT_TREE_SEL_CHANGED, self.on_tree_selection_changed)
+        left_sizer.Add(self.sat_tree, 1, wx.EXPAND | wx.ALL, 5)
 
         self.input_notebook = wx.Notebook(left_panel)
+        # ДОБАВИТЬ ЭТУ СТРОКУ: отслеживаем переключение вкладок!
+        self.input_notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self.on_tab_changed)
 
-        # Вкладка А: Управление Библиотекой Сценариев
-        tab_json = wx.Panel(self.input_notebook)
-        json_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        json_sizer.Add(wx.StaticText(tab_json, label="1. Выберите спутник:"), 0, wx.ALL, 5)
-        self.sat_listbox = wx.ListBox(tab_json, style=wx.LB_SINGLE)
-        self.sat_listbox.Bind(wx.EVT_LISTBOX, self.on_satellite_selected)
-        json_sizer.Add(self.sat_listbox, 1, wx.EXPAND | wx.ALL, 5)
-
-        json_sizer.Add(wx.StaticText(tab_json, label="2. Выберите эпоху/сценарий:"), 0, wx.ALL, 5)
-        self.epoch_listbox = wx.ListBox(tab_json, style=wx.LB_SINGLE, size=(-1, 100))
-        self.epoch_listbox.Bind(wx.EVT_LISTBOX, self.on_epoch_selected)
-        json_sizer.Add(self.epoch_listbox, 0, wx.EXPAND | wx.ALL, 5)
-
-        tab_json.SetSizer(json_sizer)
-
-        # Вкладка Б: Элементы Кеплера (Текущие параметры расчета)
+        # Вкладка А: Параметры Кеплера и Название Сценария
         tab_kep = wx.Panel(self.input_notebook)
-        kep_grid = wx.FlexGridSizer(7, 2, 5, 5)
+        kep_grid = wx.FlexGridSizer(8, 2, 4, 4)
+
+        # Поле для кастомного имени вымышленной орбиты
+        kep_grid.Add(wx.StaticText(tab_kep, label="Имя сценария:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.scen_name_input = wx.TextCtrl(tab_kep, value="Симуляция - 01")
+        kep_grid.Add(self.scen_name_input, 1, wx.EXPAND)
+
         kep_labels = ["Полуось a (км):", "Эксцентриситет e:", "Наклонение i (°):", "Узел Ω (°):", "Перицентр ω (°):",
-                      "Аномалия M (°)", "Эпоха (Текст):"]
+                      "Аномалия M (°)"]
         self.kep_inputs = {}
         for label_text in kep_labels:
             lbl = wx.StaticText(tab_kep, label=label_text)
@@ -66,54 +58,70 @@ class OrbitControlFrame(wx.Frame):
             kep_grid.Add(lbl, 0, wx.ALIGN_CENTER_VERTICAL)
             kep_grid.Add(txt, 1, wx.EXPAND)
             self.kep_inputs[label_text] = txt
+
         kep_grid.AddGrowableCol(1, 1)
         tab_kep.SetSizer(kep_grid)
 
-        # Вкладка В: Мгновенный Импорт OMM CSV с сайта Celestrak!
+        # Вкладка Б: Импорт OMM CSV
         tab_csv = wx.Panel(self.input_notebook)
         csv_sizer = wx.BoxSizer(wx.VERTICAL)
-        csv_sizer.Add(wx.StaticText(tab_csv, label="Вставьте шапку OMM CSV с сайта:"), 0, wx.ALL, 2)
+        csv_sizer.Add(wx.StaticText(tab_csv, label="Вставьте шапку OMM CSV:"), 0, wx.ALL, 2)
         self.csv_hdr_input = wx.TextCtrl(tab_csv,
                                          value="OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,NORAD_CAT_ID")
-        csv_sizer.Add(self.csv_hdr_input, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 5)
-
+        csv_sizer.Add(self.csv_hdr_input, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 2)
         csv_sizer.Add(wx.StaticText(tab_csv, label="Вставьте строку данных спутника:"), 0, wx.ALL, 2)
-        self.csv_data_input = wx.TextCtrl(tab_csv, style=wx.TE_MULTILINE,
-                                          value="OBJECT C,2023-091C,2026-05-22T17:26:00.243744,15.26057255,.0011356,97.5035,204.9400,188.2024,171.9031,0,U,57168")
-        csv_sizer.Add(self.csv_data_input, 1, wx.EXPAND | wx.ALL, 5)
-
-        import_btn = wx.Button(tab_csv, label="⚡ МГНОВЕННО ИМПОРТИРОВАТЬ В БАЗУ")
+        self.csv_data_input = wx.TextCtrl(tab_csv, style=wx.TE_MULTILINE, value="")
+        csv_sizer.Add(self.csv_data_input, 1, wx.EXPAND | wx.ALL, 2)
+        import_btn = wx.Button(tab_csv, label="⚡ ИМПОРТИРОВАТЬ СТРОКУ CSV В БАЗУ")
         import_btn.Bind(wx.EVT_BUTTON, self.on_import_omm_csv_click)
-        csv_sizer.Add(import_btn, 0, wx.EXPAND | wx.ALL, 5)
+        csv_sizer.Add(import_btn, 0, wx.EXPAND | wx.ALL, 2)
         tab_csv.SetSizer(csv_sizer)
 
-        self.input_notebook.AddPage(tab_json, "Библиотека")
         self.input_notebook.AddPage(tab_kep, "Параметры Кеплера")
         self.input_notebook.AddPage(tab_csv, "Импорт OMM CSV")
-        left_sizer.Add(self.input_notebook, 1, wx.EXPAND | wx.ALL, 10)
+        left_sizer.Add(self.input_notebook, 1, wx.EXPAND | wx.ALL, 5)
 
         # Кнопка сохранения правок
-        self.save_db_btn = wx.Button(left_panel, label="💾 СОХРАНИТЬ ТЕКУЩИЕ ПРАВКИ КАК СЦЕНАРИЙ")
+        self.save_db_btn = wx.Button(left_panel, label="💾 СОХРАНИТЬ ОРБИТУ В БАЗУ ДАННЫХ")
         self.save_db_btn.Bind(wx.EVT_BUTTON, self.on_save_scenario_to_json)
-        left_sizer.Add(self.save_db_btn, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+        left_sizer.Add(self.save_db_btn, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
 
-        # Блок шага
-        step_box = wx.StaticBox(left_panel, label="⏱ Шаг симуляции")
-        step_sizer = wx.StaticBoxSizer(step_box, wx.HORIZONTAL)
-        step_sizer.Add(wx.StaticText(left_panel, label="Шаг расчета (сек):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
+        # Блок Времени и Длительности Симуляции
+        time_box = wx.StaticBox(left_panel, label="📅 Управление временем расчета")
+        time_sizer = wx.StaticBoxSizer(time_box, wx.VERTICAL)
+
+        # Выбор Даты и Времени
+        dt_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        self.date_picker = wx.adv.DatePickerCtrl(left_panel, style=wx.adv.DP_DROPDOWN)
+        self.time_picker = wx.adv.TimePickerCtrl(left_panel)
+        dt_sizer.Add(self.date_picker, 1, wx.EXPAND | wx.RIGHT, 5)
+        dt_sizer.Add(self.time_picker, 1, wx.EXPAND)
+        time_sizer.Add(wx.StaticText(left_panel, label="Дата и время старта симуляции:"), 0, wx.LEFT, 2)
+        time_sizer.Add(dt_sizer, 0, wx.EXPAND | wx.ALL, 2)
+
+        # Длительность и Шаг симуляции
+        sim_param_grid = wx.FlexGridSizer(2, 2, 5, 5)
+        sim_param_grid.Add(wx.StaticText(left_panel, label="Длительность (мин):"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.duration_input = wx.TextCtrl(left_panel, value="90")  # По умолчанию 1 виток ~ 90 мин
+        sim_param_grid.Add(self.duration_input, 1, wx.EXPAND)
+
+        sim_param_grid.Add(wx.StaticText(left_panel, label="Шаг расчета (сек):"), 0, wx.ALIGN_CENTER_VERTICAL)
         self.step_input = wx.TextCtrl(left_panel, value="120")
-        step_sizer.Add(self.step_input, 1, wx.EXPAND)
-        left_sizer.Add(step_sizer, 0, wx.EXPAND | wx.ALL, 10)
+        sim_param_grid.Add(self.step_input, 1, wx.EXPAND)
+        sim_param_grid.AddGrowableCol(1, 1)
+        time_sizer.Add(sim_param_grid, 0, wx.EXPAND | wx.ALL, 2)
+
+        left_sizer.Add(time_sizer, 0, wx.EXPAND | wx.ALL, 5)
 
         self.run_btn = wx.Button(left_panel, label="🚀 ЗАПУСТИТЬ МОДЕЛИРОВАНИЕ")
         self.run_btn.SetBackgroundColour(wx.Colour(2, 132, 199))
         self.run_btn.SetForegroundColour(wx.WHITE)
         self.run_btn.Bind(wx.EVT_BUTTON, self.on_run_simulation)
-        left_sizer.Add(self.run_btn, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+        left_sizer.Add(self.run_btn, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
 
         left_panel.SetSizer(left_sizer)
 
-        # ПРАВАЯ ПАНЕЛЬ
+        # ПРАВАЯ ПАНЕЛЬ (Результаты)
         self.right_notebook = wx.Notebook(panel)
         self.tab_graph = wx.Panel(self.right_notebook)
         graph_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -149,70 +157,87 @@ class OrbitControlFrame(wx.Frame):
         self.load_satellites_from_json()
         self.Show()
 
+    def on_tab_changed(self, event):
+        """Скрывает или показывает кнопку сохранения базы в зависимости от активной вкладки"""
+        selected_tab = self.input_notebook.GetSelection()
+
+        # Индекс 0 — это вкладка "Параметры Кеплера"
+        if selected_tab == 0:
+            self.save_db_btn.Show()  # Показываем кнопку
+        else:
+            self.save_db_btn.Hide()  # Скрываем кнопку
+
+        # КРИТИЧЕСКИ ВАЖНО для wxPython: принудительно пересчитываем геометрию интерфейса,
+        # чтобы освободившееся место красиво заполнилось другими элементами
+        self.GetSizer().Layout()
+
+        event.Skip()  # Позволяем wxPython завершить стандартную смену вкладки
+
     def load_satellites_from_json(self):
-        self.sat_listbox.Clear()
+        """Загрузка базы данных с распределением по Группам и Эпохам в дерево TreeCtrl"""
+        self.sat_tree.DeleteAllItems()
+        self.tree_root = self.sat_tree.AddRoot("Космические объекты")
+
         json_path = os.path.join(os.path.dirname(__file__), 'satellites.json')
         if os.path.exists(json_path):
             with open(json_path, 'r', encoding='utf-8') as f:
                 self.sat_data = json.load(f)
+
+                # Собираем уникальные группы
+                groups = {}
                 for norad_id, info in self.sat_data.items():
-                    idx = self.sat_listbox.Append(f"{info['name']} (NORAD: {norad_id})")
-                    self.sat_listbox.SetClientData(idx, info)
-                if self.sat_listbox.GetCount() > 0:
-                    self.sat_listbox.SetSelection(0)
-                    self.on_satellite_selected(None)
+                    g_name = info.get("group", "Вымышленные / Кастомные")
+                    if g_name not in groups:
+                        groups[g_name] = self.sat_tree.AppendItem(self.tree_root, g_name)
 
-    def on_satellite_selected(self, event):
-        """При выборе спутника заполняет список его эпох/истории"""
-        idx = self.sat_listbox.GetSelection()
-        if idx == wx.NOT_FOUND: return
-        info = self.sat_listbox.GetClientData(idx)
+                    # Добавляем спутник в соответствующую ветку группы
+                    sat_item = self.sat_tree.AppendItem(groups[g_name], info['name'])
 
-        self.epoch_listbox.Clear()
-        if 'history' in info:
-            for ep_idx, ep in enumerate(info['history']):
-                self.epoch_listbox.Append(f"Эпоха: {ep['epoch']} ({ep.get('comment', 'Без описания')})", ep)
-            if self.epoch_listbox.GetCount() > 0:
-                self.epoch_listbox.SetSelection(0)
-                self.on_epoch_selected(None)
+                    # Добавляем эпохи внутрь спутника
+                    if 'history' in info:
+                        for ep in info['history']:
+                            ep_name = f"Сценарий: {ep.get('comment', 'Без имени')}"
+                            ep_item = self.sat_tree.AppendItem(sat_item, ep_name)
+                            # Привязываем данные эпохи к конечному узлу дерева!
+                            self.sat_tree.SetItemData(ep_item, ep)
 
-    def on_epoch_selected(self, event):
-        """При выборе эпохи раскидывает элементы в поля ввода Кеплера"""
-        idx = self.epoch_listbox.GetSelection()
-        if idx == wx.NOT_FOUND: return
-        ep = self.epoch_listbox.GetClientData(idx)
+        self.sat_tree.Expand(self.tree_root)
 
-        self.kep_inputs["Полуось a (км):"].SetValue(str(ep['a']))
-        self.kep_inputs["Эксцентриситет e:"].SetValue(str(ep['e']))
-        self.kep_inputs["Наклонение i (°):"].SetValue(str(ep['i']))
-        self.kep_inputs["Узел Ω (°):"].SetValue(str(ep['omega']))
-        self.kep_inputs["Перицентр ω (°):"].SetValue(str(ep['w']))
-        self.kep_inputs["Аномалия M (°)"].SetValue(str(ep['M']))
-        self.kep_inputs["Эпоха (Текст):"].SetValue(str(ep['epoch']))
+    def on_tree_selection_changed(self, event):
+        """Срабатывает при клике на узел дерева — вытаскивает Кеплеровы элементы выбранного сценария"""
+        item = event.GetItem()
+        if not item.IsOk() or item == self.tree_root: return
+
+        ep = self.sat_tree.GetItemData(item)
+        # Если данные привязаны (это узел конкретной эпохи) — раскидываем по полям
+        if ep:
+            self.scen_name_input.SetValue(str(ep.get('comment', 'Симуляция - 01')))
+            self.kep_inputs["Полуось a (км):"].SetValue(str(ep['a']))
+            self.kep_inputs["Эксцентриситет e:"].SetValue(str(ep['e']))
+            self.kep_inputs["Наклонение i (°):"].SetValue(str(ep['i']))
+            self.kep_inputs["Узел Ω (°):"].SetValue(str(ep['omega']))
+            self.kep_inputs["Перицентр ω (°):"].SetValue(str(ep['w']))
+            self.kep_inputs["Аномалия M (°)"].SetValue(str(ep['M']))
 
     def on_import_omm_csv_click(self, event):
-        """Мгновенно парсит CSV строку с Celestrak и добавляет как новый сценарий"""
+        """Парсит OMM CSV строку с сайта и автоматически определяет её в группу кубсатов"""
         hdr = self.csv_hdr_input.GetValue().strip()
-        data_line = self.csv_data_input.GetValue().strip().split('\n')[-1]  # берем последнюю строку данных
+        data_line = self.csv_data_input.GetValue().strip().split('\n')[-1]
 
         res = parse_omm_csv_string(hdr, data_line)
         if res is None:
-            wx.MessageBox("Ошибка парсинга! Проверьте структуру колонок и строки данных.", "Ошибка CSV",
-                          wx.OK | wx.ICON_ERROR)
+            wx.MessageBox("Ошибка парсинга CSV!", "Ошибка", wx.OK | wx.ICON_ERROR)
             return
 
         json_path = os.path.join(os.path.dirname(__file__), 'satellites.json')
         norad_str = str(res['norad_id'])
 
-        # Если такого спутника еще нет в базе, создаем его родительскую карточку
-        # Если такого спутника еще нет в базе, создаем его родительскую карточку
         if norad_str not in self.sat_data:
-            self.sat_data[norad_str] = {"name": res['name'], "history": []}
+            self.sat_data[norad_str] = {"name": res['name'], "group": "Импортированные кубсаты", "history": []}
 
-        # Добавляем новую эпоху в историю этого спутника!
         new_epoch = {
             "epoch": res['epoch'],
-            "comment": f"Импорт OMM CSV за {res['epoch'][:10]}",
+            "comment": f"Импорт за {res['epoch'][:10]}",
             "a": res['a'], "e": res['e'], "i": res['i'],
             "omega": res['omega'], "w": res['w'], "M": res['M']
         }
@@ -222,20 +247,21 @@ class OrbitControlFrame(wx.Frame):
             json.dump(self.sat_data, f, ensure_ascii=False, indent=2)
 
         self.load_satellites_from_json()
-        # Автоматически переключаем фокус на вкладку Библиотеки, чтобы увидеть результат
-        self.input_notebook.SetSelection(0)
-        wx.MessageBox(f"Сценарий для ИСЗ '{res['name']}' успешно импортирован без ожидания почты!", "Триумф API",
-                      wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox("Сценарий импортирован и добавлен в группу!", "Успех", wx.OK | wx.ICON_INFORMATION)
 
     def on_save_scenario_to_json(self, event):
-        """Сохраняет текущие экранные параметры как новый сценарий для выбранного спутника"""
-        sat_idx = self.sat_listbox.GetSelection()
-        if sat_idx == wx.NOT_FOUND: return
-        info = self.sat_listbox.GetClientData(sat_idx)
+        """Сохраняет текущую кастомную орбиту под именем из поля ввода в группу 'Вымышленные'"""
+        scen_name = self.scen_name_input.GetValue().strip()
+
+        # Создаем или обновляем виртуальный ИСЗ в базе для вымышленных орбит
+        fict_id = "CUSTOM_ORBITS"
+        if fict_id not in self.sat_data:
+            self.sat_data[fict_id] = {"name": "Кастомные симуляции", "group": "Вымышленные / Кастомные",
+                                      "history": []}
 
         new_ep = {
-            "epoch": self.kep_inputs["Эпоха (Текст):"].GetValue().strip(),
-            "comment": "Пользовательский сценарий правок",
+            "epoch": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+            "comment": scen_name,
             "a": float(self.kep_inputs["Полуось a (км):"].GetValue()),
             "e": float(self.kep_inputs["Эксцентриситет e:"].GetValue()),
             "i": float(self.kep_inputs["Наклонение i (°):"].GetValue()),
@@ -244,31 +270,40 @@ class OrbitControlFrame(wx.Frame):
             "M": float(self.kep_inputs["Аномалия M (°)"].GetValue())
         }
 
-        for norad_id, data in self.sat_data.items():
-            if data['name'] == info['name']:
-                self.sat_data[norad_id]['history'].append(new_ep)
-                break
+        self.sat_data[fict_id]['history'].append(new_ep)
 
         json_path = os.path.join(os.path.dirname(__file__), 'satellites.json')
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(self.sat_data, f, ensure_ascii=False, indent=2)
 
         self.load_satellites_from_json()
-        wx.MessageBox("Сценарий сохранен в историю спутника!", "Успех", wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox(f"Сценарий '{scen_name}' сохранен в группу кастомных орбит!", "Успех",
+                      wx.OK | wx.ICON_INFORMATION)
 
     def on_export_click(self, event):
         if self.grid.GetNumberRows() == 0: return
-        with wx.FileDialog(self, "Сохранить баллистические данные", wildcard="CSV файлы (*.csv)|*.csv",
+        with wx.FileDialog(self, "Сохранить данные", wildcard="CSV файлы (*.csv)|*.csv",
                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dlg:
             if dlg.ShowModal() == wx.ID_CANCEL: return
             if save_grid_to_csv(dlg.GetPath(), self.grid):
-                wx.MessageBox("Данные успешно экспортированы!", "Успех", wx.OK | wx.ICON_INFORMATION)
+                wx.MessageBox("Экспорт завершен успешно!", "Успех")
 
     def on_run_simulation(self, event):
+        # Читаем шаг расчета и длительность
         try:
             step_sec = int(self.step_input.GetValue())
         except:
             step_sec = 120
+        try:
+            duration_min = int(self.duration_input.GetValue())
+        except:
+            duration_min = 90
+
+        # Собираем время старта из нативных виджетов даты и времени!
+        wx_date = self.date_picker.GetValue()
+        wx_time = self.time_picker.GetValue()
+        start_time = datetime(wx_date.GetYear(), wx_date.GetMonth() + 1, wx_date.GetDay(),
+                              wx_time.GetHour(), wx_time.GetMinute(), wx_time.GetSecond())
 
         try:
             a = float(self.kep_inputs["Полуось a (км):"].GetValue())
@@ -281,19 +316,20 @@ class OrbitControlFrame(wx.Frame):
             pos, vel = kepler_to_cartesian(a, e, i, omega, w, M)
 
             orbit_points = []
-            for step_idx in range(int(45 * 60 / step_sec)):
+            # Считаем ровно столько минут, сколько ввел пользователь!
+            for step_idx in range(int(duration_min * 60 / step_sec)):
                 nu_step = math.radians(M) + (step_idx * step_sec * 0.00111)
                 r_step = a * (1.0 - e * math.cos(nu_step))
                 lat_step = i * math.sin(nu_step)
                 lon_step = (omega + math.degrees(nu_step)) % 360.0
                 if lon_step > 180: lon_step -= 360.0
 
-                from datetime import timedelta
-                sim_time = datetime.utcnow() + timedelta(seconds=step_idx * step_sec)
-                orbit_points.append({'time': sim_time.strftime("%H:%M:%S"), 'height': r_step - 6371.0, 'lat': lat_step,
-                                     'lon': lon_step})
+                sim_time = start_time + timedelta(seconds=step_idx * step_sec)
+                orbit_points.append(
+                    {'time': sim_time.strftime("%H:%M:%S"), 'height': r_step - 6371.0, 'lat': lat_step,
+                     'lon': lon_step})
         except Exception as ex:
-            wx.MessageBox(f"Ошибка Кеплера: {ex}")
+            wx.MessageBox(f"Ошибка параметров баллистики: {ex}")
             return
 
         if self.grid.GetNumberRows() > 0: self.grid.DeleteRows(0, self.grid.GetNumberRows())
@@ -302,13 +338,6 @@ class OrbitControlFrame(wx.Frame):
 
         for i, pt in enumerate(orbit_points):
             density = 0.0 if pt['height'] > 1500.0 else calculate_density(pt['height'], 150.0, 150.0, 1.0, 140.0)
-
-            # Расчет магнитного поля IGRF-13
-            from magnetic_model import calculate_magnetic_field
-            mag_field = calculate_magnetic_field(pt['height'], pt['lat'], pt['lon'], datetime.utcnow())
-            if i % 5 == 0:
-                print(f"Точка {i}: Высота={pt['height']:.1f}км, Магнитное поле B={mag_field['B']:.1f} нТл")
-
             x_time.append(i * step_sec)
             y_density.append(density)
 
@@ -321,15 +350,15 @@ class OrbitControlFrame(wx.Frame):
             self.grid.SetCellValue(row, 4, f"{density:.4e}")
 
         self.axes.plot(x_time, y_density, color='#0284c7', linewidth=2)
-        self.axes.set_title("Профиль плотности атмосферы")
+        self.axes.set_title(f"Профиль плотности атмосферы (Сценарий: {self.scen_name_input.GetValue()})")
         self.axes.set_xlabel("Время полета (сек)")
         self.axes.set_ylabel("Плотность, кг/м³")
         self.axes.grid(True)
         self.canvas.draw()
         wx.Bell()
 
-
 if __name__ == "__main__":
     app = wx.App()
     frame = OrbitControlFrame()
     app.MainLoop()
+
